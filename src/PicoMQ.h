@@ -27,52 +27,33 @@ class PicoMQ {
 
         template <typename T>
         void publish(const char * topic, T payload) {
-            write_header(topic);
-            udp.print(payload);
-            udp.endPacket();
+            auto publish = begin_publish(topic);
+            publish.print(payload);
+            publish.send();
         }
 
         class Publish: public Print {
             public:
-                Publish(PicoMQ & picomq): picomq(picomq), send_pending(true) {
-                }
+                Publish(PicoMQ & picomq);
 
                 Publish(const Publish &) = delete;
                 Publish & operator=(const Publish &) = delete;
-                Publish(Publish && other): picomq(other.picomq), send_pending(other.send_pending) {
-                    other.send_pending = false;
-                }
+                Publish(Publish && other);
 
-                ~Publish() {
-                    send();
-                }
+                ~Publish();
 
-                virtual size_t write(const uint8_t * data, size_t length) override {
-                    return picomq.udp.write(data, length);
-                }
+                virtual size_t write(const uint8_t * data, size_t length) override;
+                virtual size_t write(uint8_t value) override final;
 
-                virtual size_t write(uint8_t value) override final { return picomq.udp.write(value); }
-
-                void send() {
-                    if (send_pending) {
-                        picomq.udp.endPacket();
-                        send_pending = false;
-                    }
-                }
+                void send();
 
             protected:
                 PicoMQ & picomq;
                 bool send_pending;
         };
 
-        Publish begin_publish(const char * topic) {
-            write_header(topic);
-            return Publish(*this);
-        }
-
-        Publish begin_publish(const String & topic) {
-            return begin_publish(topic.c_str());
-        }
+        Publish begin_publish(const char * topic);
+        Publish begin_publish(const String & topic);
 
         template <typename T>
         void publish(const String & topic, T payload) { publish(topic.c_str(), payload); }
@@ -89,6 +70,4 @@ class PicoMQ {
     protected:
         WiFiUDP udp;
         std::map<String, MessageCallback> subscriptions;
-
-        void write_header(const char * topic);
 };

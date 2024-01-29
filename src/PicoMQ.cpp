@@ -135,7 +135,7 @@ void PicoMQ::loop() {
     }
 }
 
-void PicoMQ::write_header(const char * topic) {
+PicoMQ::Publish PicoMQ::begin_publish(const char * topic) {
 #if defined(ESP32)
     udp.beginMulticastPacket();
 #elif defined(ESP8266)
@@ -143,17 +143,21 @@ void PicoMQ::write_header(const char * topic) {
 #else
 #error "This board is not supported."
 #endif
-
     udp.write(80);
     do {
         udp.write((uint8_t) *topic);
     } while (*topic++);
+    return Publish(*this);
+}
+
+PicoMQ::Publish PicoMQ::begin_publish(const String & topic) {
+    return begin_publish(topic.c_str());
 }
 
 void PicoMQ::publish(const char * topic, const void * payload, size_t size) {
-    write_header(topic);
-    udp.write((const uint8_t *) payload, size);
-    udp.endPacket();
+    auto publish = begin_publish(topic);
+    publish.write((const uint8_t *) payload, size);
+    publish.send();
 }
 
 void PicoMQ::subscribe(const String & topic_filter, MessageCallback callback) {
@@ -174,4 +178,27 @@ void PicoMQ::subscribe(const String & topic_filter, std::function<void(void * pa
 
 void PicoMQ::unsubscribe(const String & topic_filter) {
     subscriptions.erase(topic_filter);
+}
+
+PicoMQ::Publish::Publish(PicoMQ & picomq): picomq(picomq), send_pending(true) {}
+
+PicoMQ::Publish::Publish(Publish && other): picomq(other.picomq), send_pending(other.send_pending) {
+    other.send_pending = false;
+}
+
+PicoMQ::Publish::~Publish() {
+    send();
+}
+
+size_t PicoMQ::Publish::write(const uint8_t * data, size_t length) {
+    return picomq.udp.write(data, length);
+}
+
+size_t PicoMQ::Publish::write(uint8_t value) { return picomq.udp.write(value); }
+
+void PicoMQ::Publish::send() {
+    if (send_pending) {
+        picomq.udp.endPacket();
+        send_pending = false;
+    }
 }
